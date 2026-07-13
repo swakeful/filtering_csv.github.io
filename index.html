@@ -302,7 +302,6 @@ Vue.createApp({
 			this.historyItems.push({time, msg, key: this.historyItems.length});
 		},
         fileProcess(){
-			this.$refs.header.innerText = "Welcome to Vue 3";
 			const files = this.$refs.file_uploader.files;
 			if (!files) {
 				this.$refs.header.innerText = "Unknow files";
@@ -323,15 +322,15 @@ Vue.createApp({
 						const targetFieldNamesStr = this.targetFieldNames.join("_");
 						
 						iData+=1;
-						const msg = "find field, name - value" + this.fieldName + " - " + fieldValueStr + "; field out file " + targetFieldNamesStr;
+						const msg = "name - value: " + this.fieldName + " - " + fieldValueStr;
 						const file_name_target = iData + "_" + fieldValueStr + "-" + file_name_src;
 						const count_filtered = filtered ? filtered.length : 0;
 						if (count_filtered > 0){
-							this.toHistoryList(`${count_filtered} строк из файла ${file_name_src}, для указанных параметров ${msg}`);
+							this.toHistoryList(`${count_filtered} строк из файла ${file_name_src}, для значений ${msg}; в итог.файл включены поля: " + ${targetFieldNamesStr}`);
 							Data2File(filtered.join(SEPARATOR_LINE_FILE), file_name_target);
 						}
 						else {
-							this.toHistoryList(`Нет данных из файла ${file_name_src}, для указанных параметров ${msg}`);
+							this.toHistoryList(`Нет данных из файла ${file_name_src}, для значений ${msg}`);
 						}
 					}
 			};
