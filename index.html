@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Фильтрация данных</title>
+<meta charset="utf-8" />
+  <style>
+    /* >= 1000px */
+    @media (min-width: 1000px) {
+      .page {
+        width: 1200px;
+        margin: 0 auto;
+      }
+    }
+    .element-container {
+      margin: 20px 0;
+      padding: 20px;
+      border: 1px solid #eee;
+      border-radius: 4px;
+    }
+    .file-input {
+      width: 100%;
+      padding: 8px;
+      margin-bottom: 10px;
+      border: 1px solid #dcdfe6;
+      box-sizing: border-box;
+      border-radius: 4px;
+    }
+    .history-list {
+      margin-top: 20px;
+      border: 1px solid #eee;
+      border-radius: 4px;
+      padding: 10px;
+    }
+    .history-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #eee;
+    }
+    .history-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+      border-bottom: 1px solid #f5f5f5;
+    }
+    .msg-info {
+      flex: 1;
+      margin-right: 10px;
+    }
+    .msg-time {
+      font-size: 12px;
+      color: #999;
+      margin-top: 4px;
+    }
+    .msg-str {
+      flex: 1;
+      margin-right: 10px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .element-tip {
+      color: #e6a23c;
+      font-size: 12px;
+      margin-top: 8px;
+      padding: 8px;
+      background: #fdf6ec;
+      border-radius: 4px;
+      border: 1px solid #faecd8;
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+	<div class="element-container">
+		<button class="el-button el-button--primary" v-on:click="()=>{displaySettings= !displaySettings;}">Настройки</button>
+		<div v-if="displaySettings">
+			<div class="input-group">
+				<h4> Поле(наименование)для поиска в строке</h3>
+				<input type="text" v-model="fieldName" placeholder="Введите имя поля" />
+			</div>
+		</div>
+	</div>	
+	<hr>
+	<div class="element-container">		
+		<div class="input-group">
+			<h3>Укажите значение </h3>
+			<input type="text" v-model="fieldValue" placeholder="Введите тип" />
+		</div>
+		<div class="element-tip">
+		Возможные значения: 55 - Audio only; 76 - Video only
+		</div>
+		<div class="element-tip">
+		Если нужно указать несколько значений идентификатора, перечислите значения через запятую ",". Например: 56,76
+		</div>
+		<div class="element-tip">
+		Для разбивки по файлам, разделите перечисление значений через точку с запятой ";". Например: 55,76;55
+		</div>
+		
+	  
+		<h3 ref="header">Выберите файл для обработки</h3>
+		<div class="input-group">
+			<input type="file" ref="file_uploader" name="file_uploader" class="file-input" multiple accept="text/csv, text/plain" placeholder="Выберите файл">
+			<button class="el-button el-button--primary" v-on:click="fileProcess">Обработать файл</button>
+		</div>
+		<div class="element-tip">
+		После нажатия "Обработать файл", итоговые данные будут помещены в файлы
+		</div>
+		<div class="element-tip">
+		Информация об обрабоке выводится ниже
+		</div>
+	</div>
+
+    <div class="history-list">
+      <div class="history-header">
+        <h3>История обработки</h3>
+        <button id="clearHistoryBtn" v-on:click="clearHistory" class="el-button el-button--text">Очистить все</button>
+      </div>
+      <div style="height: 150px, overflow: auto">
+		<div v-for="item in historyItems" :key="item.key" class="history-item">
+			<div class="msg-info">
+				<div class="msg-str">{{item.msg}}</div>
+				<div class="msg-time">{{item.time}}</div>
+			</div>
+		</div>
+	  </div>
+    </div>
+	
+</div>
+<script src="vue.global.js"></script>
+<script>
+	const SEPARATOR_LINE_FILE = "\n";
+	const SEPARATOR_FIELD_FILE = ";";
+	const SEPARATOR_FIELD_GROUP = ";";
+	const SEPARATOR_FIELD_VALUE = ",";
+	
+	
+	function Data2File( data, fileName, fileType ) {
+	  // Set objects for file generation.s
+	  var blob, url, a, extension;
+
+		// Get time stamp for fileName.
+		var stamp = new Date().getTime();
+
+		// Set MIME type and encoding.
+		fileType = ( fileType || "text/csv;charset=UTF-8" );
+		extension = fileType.split( "/" )[1].split( ";" )[0];
+		// Set file name.
+		fileName = ( fileName || "data_" + stamp + "." + extension );
+
+		// Set data on blob.
+		blob = new Blob( [ data ], { type: fileType } );
+
+		// Set view.
+		if ( blob ) {
+			// Read blob.
+			url = window.URL.createObjectURL( blob );
+
+			// Create link.
+			a = document.createElement( "a" );
+			// Set link on DOM.
+			document.body.appendChild( a );
+			// Set link's visibility.
+			a.style = "display: none";
+			// Set href on link.
+			a.href = url;
+			// Set file name on link.
+			a.download = fileName;
+
+			// Trigger click of link.
+			a.click();
+
+			// Clear.
+			window.URL.revokeObjectURL( url );
+		} else {
+			// Handle error.
+			//handler(null, new Error("Can`t save file"));
+            return;
+		}
+	};
+	
+	const EXCLUDE_FIELDS_VALUE = ["0_1029695", "undefined_undefined"];
+	function ExtractFields(fields, fieldIndexes){
+		if (fieldIndexes.length > 0){
+			let result = [];
+			for(const indx of fieldIndexes){
+				if (indx < fields.length){
+					const value = fields[indx];
+					if (!value || EXCLUDE_FIELDS_VALUE.indexOf(value) > -1){
+						//Пропускаем, если хоть одно поле не прошло фильтр по значению
+						result = [];
+						break;
+					}
+					result.push(value);
+				}
+			}
+			return result;
+		}
+		return fields;
+	}
+	
+	function CheckUniqueItem(items, value){
+		if (items.length > 0){
+			//const allUniqueBy = (arr, fn) => arr.length === new Set(arr.map(fn)).size;
+			//const find_value = value.join(SEPARATOR_FIELD);
+			//return allUniqueBy(items, (item)=>item.join(SEPARATOR_FIELD));
+			return items.indexOf(value) < 0;
+		}
+		return true;
+	}
+	
+	function DataFiltering( source_data, fieldName, fieldInfoValues, targetFieldName ) {
+		// Разбиваем source_data на строки и фильтруем
+		// Находим в ПЕРВОЙ строке индекс для поля fieldName
+		// В ПОСЛЕДУЮЩИХ строках по индексу находим значение и сравниваем его с содержимым в fieldValues
+		// fieldValues: [[v1], [v2], [v1, v2], ]
+		// Итоговая строка содержит данные согласно полям из targetFieldName
+		
+		const lines = source_data.split(SEPARATOR_LINE_FILE); 
+		result = []; // item of list [[], []] count === count of fieldInfoValues
+		for(const fieldValues of fieldInfoValues){result.push([])};
+		
+		fieldNames = [];
+		fieldIndexes = [];
+		let isFirst = true;
+		let indexField = -1;
+		for(const line of lines){
+			if (isFirst) {
+				isFirst = false;
+				fieldNames = line.split(SEPARATOR_FIELD_FILE);
+				indexField = fieldNames.findIndex((key) => key === fieldName);
+                if (indexField < 0) {
+					//handler(null, new Error(`Not find field ${fieldName} in data`));
+					break;
+				}
+				for(const iTFieldName of targetFieldName){
+					const _indx = fieldNames.findIndex((key) => key === iTFieldName);
+					if (_indx > -1) {
+						fieldIndexes.push(_indx);
+					}
+				}
+				continue;
+			}
+			if (indexField < 0) continue;
+			
+			const fields = line.split(SEPARATOR_FIELD_FILE);  
+			if (indexField < fields.length){
+				const value = fields[indexField];
+				let iResult = 0;
+				for(const fieldValues of fieldInfoValues) {
+					const itemResult = result[iResult];
+					iResult += 1;
+					const indexV = fieldValues.findIndex((v) => v === value);
+					if (indexV > -1){
+						const fields2 = ExtractFields(fields, fieldIndexes);
+						if (fields2 && fields2.length > 0) {
+							const item_str = fields2.join(SEPARATOR_FIELD_FILE)
+							if (CheckUniqueItem(itemResult, item_str)) itemResult.push(item_str);
+						}
+					}
+				}
+			}
+		}
+		return result;
+	}
+
+Vue.createApp({
+	data() {
+		return {
+			fieldValue: '55',
+			fieldName: 'bannertype',
+			targetFieldName: 'oiv_user',
+			historyItems: [],
+			displaySettings:false,
+		};
+	},
+	computed: {
+        displayHistoryItems() {
+			return this.historyItems?.length > 0 ? "inline-block" : "none";
+		},
+		fieldInfoValues(){
+			const result = [];
+			const fieldGroups = this.fieldValue.split(SEPARATOR_FIELD_GROUP);  
+			for(const iGroup of fieldGroups){
+				const values = iGroup.split(SEPARATOR_FIELD_VALUE) || [];
+				result.push(values);
+			}
+			return result;
+		},
+		targetFieldNames(){
+			return this.targetFieldName.split(SEPARATOR_FIELD_VALUE) || [];;
+		}
+		
+	},
+    methods:{
+		toHistoryList(msg){
+			console.log(msg);
+			const time = new Date();
+			this.historyItems.push({time, msg, key: this.historyItems.length});
+		},
+        fileProcess(){
+			this.$refs.header.innerText = "Welcome to Vue 3";
+			const files = this.$refs.file_uploader.files;
+			if (!files) {
+				this.$refs.header.innerText = "Unknow files";
+				return;
+			}
+			const fileObj = files[0];
+			const file_name_src = fileObj?.name;
+		
+			const reader = new FileReader();
+			reader.onload = (event)=>{
+					let source_data = event.target.result;
+					const processingData = DataFiltering(source_data, this.fieldName, this.fieldInfoValues, this.targetFieldNames);
+					
+					let iData = 0;
+					for (const filtered of processingData) {
+						const fieldValue = this.fieldInfoValues[iData];
+						const fieldValueStr = fieldValue.join("_");
+						const targetFieldNamesStr = this.targetFieldNames.join("_");
+						
+						iData+=1;
+						const msg = "find field, name - value" + this.fieldName + " - " + fieldValueStr + "; field out file " + targetFieldNamesStr;
+						const file_name_target = iData + "_" + fieldValueStr + "-" + file_name_src;
+						const count_filtered = filtered ? filtered.length : 0;
+						if (count_filtered > 0){
+							this.toHistoryList(`${count_filtered} строк из файла ${file_name_src}, для указанных параметров ${msg}`);
+							Data2File(filtered.join(SEPARATOR_LINE_FILE), file_name_target);
+						}
+						else {
+							this.toHistoryList(`Нет данных из файла ${file_name_src}, для указанных параметров ${msg}`);
+						}
+					}
+			};
+
+			reader.readAsText(fileObj);			
+        },
+		clearHistory(){
+			this.historyItems = [];
+		},
+	
+    }
+})
+.mount('#app');
+</script>
+</body>
+</html>
