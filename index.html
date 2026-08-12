@@ -231,8 +231,8 @@
 		return true;
 	}
 	
-	function DataFiltering( source_data, fieldName, fieldInfoValues, targetFieldName, blacklist ) {
-		// Разбиваем source_data на строки и фильтруем
+	function DataFiltering( lines, fieldName, fieldInfoValues, targetFieldName, blacklist ) {
+		// lines строки из файла
 		// Находим в ПЕРВОЙ строке(в заголовке) индекс для поля fieldName
 		// В ПОСЛЕДУЮЩИХ строках по индексу находим значение и сравниваем его с содержимым из fieldInfoValues
 		// fieldValues: [[v1], [v2], [v1, v2], ]
@@ -248,8 +248,6 @@
 		fieldIndexes = [];
 		let isFirst = true;
 		let indexField = -1;
-
-		const lines = source_data.split(SEPARATOR_LINE_FILE); 
 		for(const line of lines){
 			if (isFirst) {
 				// Обрабатываем заголовок - строку с наименованием колонок
@@ -299,6 +297,18 @@
 		return result;
 	}
 
+	const uploadFiles = async (fileItems) => {
+		let files = Array.from(fileItems).map(file => {
+			let reader = new FileReader();
+			return new Promise(resolve => {
+				reader.onload = () => resolve(reader.result);
+
+				reader.readAsText(file);
+			});
+		});
+		return await Promise.all(files);
+	}
+
 Vue.createApp({
 	data() {
 		return {
@@ -334,45 +344,67 @@ Vue.createApp({
 			const time = new Date();
 			this.historyItems.push({time, msg, key: this.historyItems.length});
 		},
-        fileProcess(){
+		async getTotalLines(files, limitNumber) {
+			const max = limitNumber || 2;
+			const fileList = [];
+			for (const file of files) {
+				fileList.push(file);
+				if (fileList.length >= max) break;
+			}
+			const fileTextItems = fileList.length > 0 ? await uploadFiles(fileList): [];
+			let totalLines = [];
+			if (fileTextItems.length > 0){
+				const fileText1 = fileTextItems[0];
+				totalLines = fileText1.split(SEPARATOR_LINE_FILE);
+				let i = 1;
+				while(i < fileTextItems.length){
+					const iFileText = fileTextItems[i++];
+					const fileLines = iFileText.split(SEPARATOR_LINE_FILE);
+					fileLines.splice(0, 1);
+					totalLines = totalLines.concat(fileLines);
+
+				}
+			}
+			return {fileList, totalLines};
+		},
+        async fileProcess(){
 			const files = this.$refs.file_uploader.files;
 			if (!files) {
 				this.$refs.header.innerText = "Unknow files";
 				return;
 			}
-			const fileObj = files[0];
-			const file_name_src = fileObj?.name;
-		
-			const reader = new FileReader();
-			reader.onload = (event)=>{
-					let source_data = event.target.result;
-					//получим данные для 
-					const secondaryData = this.fieldBlackValue ? DataFiltering(source_data, this.fieldName, [[this.fieldBlackValue]], [this.targetFieldNames[0]]) : [];
-					const blackList = secondaryData.length > 0 ? secondaryData[0] : undefined;
-					const mainData = DataFiltering(source_data, this.fieldName, this.fieldInfoValues, this.targetFieldNames, blackList);
-					
-					//каждый из списков сохраняем в отдельном файле
-					let iData = 0;
-					for (const filtered of mainData) {
-						const fieldValue = this.fieldInfoValues[iData];
-						const fieldValueStr = fieldValue.join("_");
-						const targetFieldNamesStr = this.targetFieldNames.join("_");
-						
-						iData+=1;
-						const msg = "name - value: " + this.fieldName + " - " + fieldValueStr;
-						const file_name_target = iData + "_" + fieldValueStr + "-" + file_name_src;
-						const count_filtered = filtered ? filtered.length : 0;
-						if (count_filtered > 0){
-							this.toHistoryList(`${count_filtered} строк из файла ${file_name_src}, для значений ${msg}; в итог.файл включены поля: " + ${targetFieldNamesStr}`);
-							Data2File(filtered.join(SEPARATOR_LINE_FILE), file_name_target);
-						}
-						else {
-							this.toHistoryList(`Нет данных из файла ${file_name_src}, для значений ${msg}`);
-						}
-					}
-			};
-
-			reader.readAsText(fileObj);			
+			const {fileList, totalLines} = await this.getTotalLines(files);
+			const nameFiles = fileList.map((file)=>{
+				const parts = file.name.split(".");
+				parts.pop();
+				return parts.join(".");
+			});
+			const fileNames = nameFiles.join("_");
+			this.toHistoryList(`Файлы для обработки: ${nameFiles.join(", ")}`);
+			
+			const secondaryData = this.fieldBlackValue ? DataFiltering(totalLines, this.fieldName, [[this.fieldBlackValue]], [this.targetFieldNames[0]]) : [];
+			const blackList = secondaryData.length > 0 ? secondaryData[0] : undefined;
+			const mainData = DataFiltering(totalLines, this.fieldName, this.fieldInfoValues, this.targetFieldNames, blackList);
+			
+			//каждый из списков сохраняем в отдельном файле
+			let iData = 0;
+			for (const filtered of mainData) {
+				const fieldValue = this.fieldInfoValues[iData];
+				const fieldValueStr = fieldValue.join("_");
+				const targetFieldNamesStr = this.targetFieldNames.join("_");
+				
+				iData+=1;
+				const msg = "name - value: " + this.fieldName + " - " + fieldValueStr;
+				const file_name_target = iData + "_" + fieldValueStr + "-" + fileNames;
+				const count_filtered = filtered ? filtered.length : 0;
+				if (count_filtered > 0){
+					this.toHistoryList(`Обработано ${count_filtered} строк из: ${nameFiles.join(", ")}; для значений ${msg}; в итог.файл включены поля: " + ${targetFieldNamesStr}`);
+					Data2File(filtered.join(SEPARATOR_LINE_FILE), file_name_target);
+				}
+				else {
+					this.toHistoryList(`Нет данных из: ${nameFiles.join(", ")}; для значений ${msg}`);
+				}
+			}			
         },
 		clearHistory(){
 			this.historyItems = [];
