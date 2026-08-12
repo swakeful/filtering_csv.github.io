@@ -82,13 +82,18 @@
 				<h4> Поле(наименование)для поиска в строке</h3>
 				<input type="text" v-model="fieldName" placeholder="Введите имя поля" />
 			</div>
+			<div class="input-group">
+				<h4> Поле (наименование)для включения в результирующий файл</h3>
+				<input type="text" v-model="targetFieldName" placeholder="Введите имя поля" />
+			</div>
+
 		</div>
 	</div>	
 	<hr>
 	<div class="element-container">		
 		<div class="input-group">
-			<h3>Укажите значение </h3>
-			<input type="text" v-model="fieldValue" placeholder="Введите тип" />
+			<h3>Укажите значение поля "{{fieldName}}" для основной выборки </h3>
+			<input type="text" v-model="fieldValue" placeholder="Введите значение" />
 		</div>
 		<div class="element-tip">
 		Возможные значения: 55 - Audio only; 76 - Video only
@@ -100,7 +105,19 @@
 		Для разбивки по файлам, разделите перечисление значений через точку с запятой ";". Например: 55,76;55
 		</div>
 		
-	  
+		<div class="input-group">
+			<h3>Значение поля "{{fieldName}}" для чёрного списка </h3>
+			<input type="text" v-model="fieldBlackValue" placeholder="Необязательное значение" />
+		</div>
+		<div class="element-tip">
+			Если значение не указано - чёрный список не включен
+		</div>
+		<div class="element-tip">
+			Значение не должно совпадать со значением для основной выборки
+		</div>
+
+	</div>
+	<div class="element-container">
 		<h3 ref="header">Выберите файл для обработки</h3>
 		<div class="input-group">
 			<input type="file" ref="file_uploader" name="file_uploader" class="file-input" multiple accept="text/csv, text/plain" placeholder="Выберите файл">
@@ -136,6 +153,8 @@
 	const SEPARATOR_FIELD_FILE = ";";
 	const SEPARATOR_FIELD_GROUP = ";";
 	const SEPARATOR_FIELD_VALUE = ",";
+	const DEF_FIELD_NAME = "bannertype"; 		// имя поля - столбец в файле, для фильтрации
+ 	const DEF_TARGET_FIELD_NAME = "oiv_user";   // имя поля - столбец в файле, для помещения в результирующий файл
 	
 	
 	function Data2File( data, fileName, fileType ) {
@@ -212,23 +231,28 @@
 		return true;
 	}
 	
-	function DataFiltering( source_data, fieldName, fieldInfoValues, targetFieldName ) {
+	function DataFiltering( source_data, fieldName, fieldInfoValues, targetFieldName, blacklist ) {
 		// Разбиваем source_data на строки и фильтруем
-		// Находим в ПЕРВОЙ строке индекс для поля fieldName
-		// В ПОСЛЕДУЮЩИХ строках по индексу находим значение и сравниваем его с содержимым в fieldValues
+		// Находим в ПЕРВОЙ строке(в заголовке) индекс для поля fieldName
+		// В ПОСЛЕДУЮЩИХ строках по индексу находим значение и сравниваем его с содержимым из fieldInfoValues
 		// fieldValues: [[v1], [v2], [v1, v2], ]
 		// Итоговая строка содержит данные согласно полям из targetFieldName
 		
-		const lines = source_data.split(SEPARATOR_LINE_FILE); 
+		// если бы поиск был по одному значению, на выходе был бы один список
+		// т.к. задан список полей для фильтрации в fieldInfoValues, на выходе - список списков
 		result = []; // item of list [[], []] count === count of fieldInfoValues
 		for(const fieldValues of fieldInfoValues){result.push([])};
-		
+
+
 		fieldNames = [];
 		fieldIndexes = [];
 		let isFirst = true;
 		let indexField = -1;
+
+		const lines = source_data.split(SEPARATOR_LINE_FILE); 
 		for(const line of lines){
 			if (isFirst) {
+				// Обрабатываем заголовок - строку с наименованием колонок
 				isFirst = false;
 				fieldNames = line.split(SEPARATOR_FIELD_FILE);
 				indexField = fieldNames.findIndex((key) => key === fieldName);
@@ -248,6 +272,7 @@
 			
 			const fields = line.split(SEPARATOR_FIELD_FILE);  
 			if (indexField < fields.length){
+				let isBblack = false;
 				const value = fields[indexField];
 				let iResult = 0;
 				for(const fieldValues of fieldInfoValues) {
@@ -257,8 +282,15 @@
 					if (indexV > -1){
 						const fields2 = ExtractFields(fields, fieldIndexes);
 						if (fields2 && fields2.length > 0) {
-							const item_str = fields2.join(SEPARATOR_FIELD_FILE)
-							if (CheckUniqueItem(itemResult, item_str)) itemResult.push(item_str);
+							isBblack = false;
+							if (blacklist) {
+								const firstValue = fields2[0];
+								isBblack = blacklist.indexOf(firstValue) > -1;
+							}
+							if (!isBblack) {
+								const item_str = fields2.join(SEPARATOR_FIELD_FILE)
+								if (CheckUniqueItem(itemResult, item_str)) itemResult.push(item_str);
+							}
 						}
 					}
 				}
@@ -270,9 +302,10 @@
 Vue.createApp({
 	data() {
 		return {
-			fieldValue: '55',
-			fieldName: 'bannertype',
-			targetFieldName: 'oiv_user',
+			fieldValue: "55",
+			fieldBlackValue: "",
+			fieldName: DEF_FIELD_NAME,
+			targetFieldName: DEF_TARGET_FIELD_NAME,
 			historyItems: [],
 			displaySettings:false,
 		};
@@ -291,7 +324,7 @@ Vue.createApp({
 			return result;
 		},
 		targetFieldNames(){
-			return this.targetFieldName.split(SEPARATOR_FIELD_VALUE) || [];;
+			return this.targetFieldName.split(SEPARATOR_FIELD_VALUE) || [DEF_TARGET_FIELD_NAME];
 		}
 		
 	},
@@ -313,10 +346,14 @@ Vue.createApp({
 			const reader = new FileReader();
 			reader.onload = (event)=>{
 					let source_data = event.target.result;
-					const processingData = DataFiltering(source_data, this.fieldName, this.fieldInfoValues, this.targetFieldNames);
+					//получим данные для 
+					const secondaryData = this.fieldBlackValue ? DataFiltering(source_data, this.fieldName, [[this.fieldBlackValue]], [this.targetFieldNames[0]]) : [];
+					const blackList = secondaryData.length > 0 ? secondaryData[0] : undefined;
+					const mainData = DataFiltering(source_data, this.fieldName, this.fieldInfoValues, this.targetFieldNames, blackList);
 					
+					//каждый из списков сохраняем в отдельном файле
 					let iData = 0;
-					for (const filtered of processingData) {
+					for (const filtered of mainData) {
 						const fieldValue = this.fieldInfoValues[iData];
 						const fieldValueStr = fieldValue.join("_");
 						const targetFieldNamesStr = this.targetFieldNames.join("_");
